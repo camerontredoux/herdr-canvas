@@ -350,17 +350,7 @@ async function tidy(text) {
 }
 
 /** Stops saving: writing now could lose the drawing on disk. */
-/** TEMP DEBUG: save and load events to data/canvas/save-debug.log. */
-const saveLog = [];
-const BUILD = Date.now();
-function sdbg(m) {
-  saveLog.push(`${new Date().toISOString()} build=${BUILD} ${m}`);
-  fs.mkdir(`${appHome()}/data/canvas`, { recursive: true }).catch(() => {})
-    .then(() => fs.writeFile(`${appHome()}/data/canvas/save-debug-${BUILD}.log`, saveLog.join("\n"))).catch(() => {});
-}
-
 function block(why) {
-  if (!checking()) sdbg(`BLOCK ${why}`);
   store.blocked = why;
   console.log(`canvas: ${why}; not saving, so the file stays as it is`);
 }
@@ -368,10 +358,8 @@ function block(why) {
 /** Hands over to a newer build of this mod (see `load`): saves what's pending, then empties
  *  this build's store and wakes its copies, whose loops end there. */
 async function retire() {
-  sdbg(`retire start dirty=${store.dirty} viewDirty=${store.viewDirty}`);
   if (store.dirty || store.viewDirty) await save();
   else await store.saving;
-  sdbg("retire saved");
   store.retired = true;
   store.blocked = "a newer build has taken over";
   Object.assign(store, { strokes: [], chunks: [], texts: [], images: [], undo: [], redo: [], saved: null });
@@ -389,9 +377,8 @@ function load(cx) {
     // reading the file, so never saving either (it won't replace a file it hasn't read).
     // Not during `herdr-app check`: it must never empty the live canvas.
     if (!checking()) {
-      sdbg(`load start, old build=${!!globalThis.canvasRetire}`);
       const old = globalThis.canvasRetire?.();
-      if (old) sdbg(`load: old build ${await Promise.race([old.then(() => "retired"), cx.sleep(RETIRE_MS).then(() => "TIMED OUT")])}`);
+      if (old) await Promise.race([old, cx.sleep(RETIRE_MS)]);
       globalThis.canvasRetire = retire;
     }
     const text = await fs.readFile(file(), "utf8").catch(async (e) => {
@@ -433,7 +420,6 @@ function load(cx) {
     }
     store.loaded = true;
     if (store.dirty || store.viewDirty) save();  // what was drawn while it read
-    if (!checking()) sdbg(`load done saved=${store.saved?.length ?? null} strokes=${store.strokes.length} blocked=${store.blocked}`);
     changed();
   })();
 }
@@ -474,7 +460,6 @@ function save() {
         color: COLORS[store.color], width: WIDTHS[store.width] });
       await fs.writeFile(viewFile(), text).catch((e) => { store.viewDirty = true; console.log(`canvas: saving the view failed: ${e}`); });
     }
-    if (store.dirty) sdbg(`save dirty blocked=${store.blocked} saved=${store.saved?.length ?? null} strokes=${store.strokes.length}`);
     if (!store.dirty || store.blocked) return;
     store.dirty = false;
     const { texts, images } = dump([...store.texts, ...store.images]);
@@ -491,9 +476,7 @@ function save() {
         await replaceFile(file(), text, await fs.readFile(file(), "utf8").catch(() => null));
       }
       store.saved = text;
-      sdbg(`saved ${text.length}`);
     } catch (e) {
-      sdbg(`save FAILED ${e}`);
       store.dirty = true;
       console.log(`canvas: saving failed: ${e}`);
     }
@@ -674,10 +657,6 @@ const iconPaths = () => icons ??= {
   rubber: PathBuilder.fill().add_polygon([[2.5, 10], [5.3, 7.2], [9.8, 11.7], [7, 14.5]], true).build(),
 };
 
-/** TEMP DEBUG: render failures seen this session. @type {string[]} */
-const renderErrors = [];
-let debugBuilds = 0;
-let debugT = {};
 
 export default class Canvas extends View {
   init(_props, cx) {
@@ -725,7 +704,7 @@ export default class Canvas extends View {
     this.buildBy = Infinity;  // when this frame's chunk builds must stop (PAINT_BUILD_MS)
     this.more = false;        // chunks were left out of this frame for want of time
     if (checking()) return;
-    // A frame that left chunks out for want of time (see `chunks` in renderBody) draws again.
+    // A frame that left chunks out for want of time (see `chunks` in render) draws again.
     cx.spawn(async (cx) => {
       for (;;) {
         await new Promise((r) => { this.wakeMore = r; });
@@ -1598,7 +1577,6 @@ export default class Canvas extends View {
     }
     const job = this.job(ch, ch.strokes, z);
     while (job.i < job.strokes.length) job.add(job.strokes[job.i++]);
-    debugBuilds++;  // TEMP DEBUG
     return this.keep(ch, { z, parts: [job.part()] });
   }
 
@@ -1645,7 +1623,7 @@ export default class Canvas extends View {
     // Chunks are built at the zoom until TILE_BUILD_MS runs out; the rest keep any build they
     // have, stretched, and the tile is left marked out of date, so `drawTiles` queues it again
     // and the next frame carries on where this one stopped.
-    const out = [], by = Date.now() + TILE_BUILD_MS, t0 = Date.now();
+    const out = [], by = Date.now() + TILE_BUILD_MS;
     let done = true, missing = false;  // missing: chunks left out, so the main view paints them meanwhile
     for (const ch of list) {
       const time = Date.now() < by;
@@ -1662,11 +1640,6 @@ export default class Canvas extends View {
       }
     }
     this.tileAs[t] = { sig: missing ? null : sig, z: done ? z : null, box: b };
-    const ms = Date.now() - t0;  // TEMP DEBUG
-    if (ms > 30 && !checking()) {
-      renderErrors.push(`${new Date().toISOString()} TILE ${t} ${ms}ms z=${z.toFixed(3)} chunks=${list.length} strokes=${list.reduce((n, ch) => n + ch.strokes.length, 0)} done=${done}`);
-      fs.writeFile(`${appHome()}/data/canvas/render-errors.log`, renderErrors.join("\n")).catch(() => {});
-    }
     return div().id(`${this.uid}-tile-${t}`).size_full().relative().children(out);
   }
 
@@ -1835,25 +1808,7 @@ export default class Canvas extends View {
     return rows;
   }
 
-  // TEMP DEBUG: record render failures (with stack) to data/canvas/render-errors.log, then rethrow.
   render() {
-    try {
-      debugBuilds = 0; debugT = {};
-      const t0 = Date.now(), out = this.renderBody(), ms = Date.now() - t0;
-      if (ms > 30) {
-        renderErrors.push(`${new Date().toISOString()} SLOW ${ms}ms mode=${this.mode} z=${store.view.z.toFixed(3)} rebuilt=${debugBuilds} chunks=${store.chunks.length} strokes=${store.strokes.length} cur=${this.cur ? this.cur.p.length / 2 : 0}pts ${JSON.stringify(debugT)}`);
-        fs.writeFile(`${appHome()}/data/canvas/render-errors.log`, renderErrors.join("\n")).catch(() => {});
-      }
-      return out;
-    } catch (e) {
-      const mode = this.mode, cur = this.cur ? { n: this.cur.p.length, snapped: this.cur.snapped, kept: !!this.cur.kept } : null;
-      renderErrors.push(`${new Date().toISOString()} mode=${mode} tool=${this.tool} cur=${JSON.stringify(cur)}\n${e?.name}: ${e?.message} | ${String(e)}\n${e?.stack ?? ""}\n`);
-      if (!checking()) fs.writeFile(`${appHome()}/data/canvas/render-errors.log`, renderErrors.join("\n")).catch(() => {});
-      throw e;
-    }
-  }
-
-  renderBody() {
     this.buildBy = Date.now() + PAINT_BUILD_MS;
     this.more = false;
     this.drawn = store.version;
@@ -1934,11 +1889,8 @@ export default class Canvas extends View {
 
     // Images under strokes under text; what's being moved on top.
     images(store.images, 0, 0);
-    let T = Date.now();
     this.drawTiles(layers, (list) => chunks(list), (b) => offscreen(b));
-    debugT.chunks = Date.now() - T; T = Date.now();
     texts(store.texts, 0, 0);
-    debugT.texts = Date.now() - T;
     if (d) {
       // While scaling, the texts and images show as scaled stand-ins with the same ids.
       const [ax, ay] = d.handle?.a ?? [0, 0], look = (i) => (resizing ? { ...i, ...scaling(i, ax, ay, d.shown) } : i);
@@ -1957,11 +1909,8 @@ export default class Canvas extends View {
       const ids = new Set(store.strokes.map((st) => st.id));
       for (const id of owner.keys()) if (!ids.has(id)) owner.delete(id);
     }
-
-    T = Date.now();
     // The stroke being drawn is its own view (Ink): each pen move redraws only it.
     if (this.cur) layers.push(this.ink);
-    debugT.live = Date.now() - T;
 
     // The selection: a thin box around each item (when there are few) and one around them all.
     if (this.sel.size) {
@@ -2016,15 +1965,10 @@ export default class Canvas extends View {
       // Herdr can't hide the pointer, so the eraser keeps the plain arrow, its tip at the ring's center.
       : this.tool === "eraser" ? root.cursor_default()
       : this.tool === "text" ? root.cursor_text() : root.cursor_crosshair();
-    T = Date.now();
     const mini = this.minimap(t, paint);
-    debugT.mini = Date.now() - T; T = Date.now();
     const g = this.grid(t);
-    debugT.grid = Date.now() - T; T = Date.now();
     const tb = this.toolbar(t, paint);
-    debugT.bar = Date.now() - T; T = Date.now();
     const out = root.children([...g, ...layers, ...(mini ? [mini] : []), tb]);
-    debugT.tree = Date.now() - T;
     if (this.more) this.wakeMore?.();
     return out;
   }
