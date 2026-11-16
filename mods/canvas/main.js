@@ -1,5 +1,5 @@
-// Canvas: one global freehand drawing board, opened as a pane in any tab (cmd-shift-e,
-// cam.toggle-canvas in keys.json, opens it on the right or closes it).
+// Canvas: one global freehand drawing board, opened as a pane in any tab (cmd-shift-e in
+// keys.json splits one off to the right: `pane.split` with `"mod": "canvas"`).
 //
 // Tools, at the left of the toolbar, each with a key (pressed with no modifiers):
 // - Pointer (S): click to select (Shift-click adds), drag on empty space to select a range,
@@ -33,7 +33,7 @@
 // are cached per zoom: panning only moves them, zooming rebuilds the ones on screen.
 import { View, div, image, PathBuilder } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, appHome, checking, exec, nextCommand, run, writeTextFile } from "herdr";
+import { theme, appHome, checking, exec, nextCommand, run, shared, writeTextFile } from "herdr";
 import * as fs from "fs/promises";
 import { createHash } from "crypto";
 import { REACH, stream, smooth, simplify, finish, straight, level, trace, circle, box, length, DOT, nearLine, nearSegment,
@@ -491,6 +491,14 @@ function later(cx, view = false) {
   else store.dirty = true;
   store.saveTask?.cancel();
   store.saveTask = cx.timer.after(SAVE_MS, () => { save(); });
+}
+
+/** The command alt-shift-left/right run when the canvas has nothing to do with them: Herdr's
+ *  `tab.prev`/`tab.next`, unless another mod names its own in the shared value
+ *  `canvas.tab-commands` (`{ prev, next }`). @param {"prev" | "next"} dir */
+function tabCommand(dir) {
+  const own = /** @type {any} */ (shared("canvas.tab-commands"))?.[dir];
+  return typeof own === "string" ? own : `tab.${dir}`;
 }
 
 /** Records a change already applied as one undo step. @param {Step} step @param {any} cx */
@@ -1441,8 +1449,8 @@ export default class Canvas extends View {
 
   /** A key that keys.json's mod:canvas section takes back from a global binding (cmd-d,
    *  cmd-shift-arrows, alt-shift-left/right), as "cmd-shift-left". The canvas uses it while
-   *  typing in a text box (or, for cmd-d, with a selection); otherwise it does what the global
-   *  binding does in cam's layout. */
+   *  typing in a text box (or, for cmd-d, with a selection); otherwise it does what these keys do in
+   *  Herdr: split a pane, move between panes, switch tabs (see `tabCommand`). */
   globalKey(keystroke, cx) {
     if (!this.focus.is_focused()) return;  // every shown copy gets the command
     const parts = keystroke.split("-"), key = /** @type {string} */ (parts.pop());
@@ -1452,7 +1460,7 @@ export default class Canvas extends View {
     if (this.mode) return;
     if (key === "d") run("pane.split", { direction: "right" });
     else if (m.platform) run("pane.go", { direction: key });
-    else if (key === "left" || key === "right") run(key === "left" ? "cam.tab-prev" : "cam.tab-next");
+    else if (key === "left" || key === "right") run(tabCommand(key === "left" ? "prev" : "next"));
   }
 
   key(e, cx) {

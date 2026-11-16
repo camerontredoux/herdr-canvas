@@ -2,7 +2,7 @@
 
 A freehand drawing board for [Herdr](https://github.com/herdrdev/herdr-app). It opens as a pane in any tab. Every pane shows the same drawing.
 
-![The canvas in Herdr: hand-drawn strokes, text, and a selected picture with resize handles](docs/screenshot.png)
+![The canvas in Herdr: hand-drawn strokes, text, and a selected picture with resize handles](preview.png)
 
 ## Features
 
@@ -25,29 +25,47 @@ Tool keys, pressed with no modifier:
 | E | Eraser |
 | T | Text |
 
-Esc goes back to the pointer. The comment at the top of `main.js` lists every shortcut.
+Esc goes back to the pointer. The comment at the top of `mods/canvas/main.js` lists every shortcut.
 
 ## Install
 
-1. Clone this repository into your Herdr mods folder:
+The canvas needs macOS: it pastes images with `osascript` and converts dropped images with `sips`. It makes no network requests.
+
+### With an agent
+
+Give your Herdr agent this repo's URL and ask it to add the mod. Herdr's guide tells it how: it copies `mods/canvas/` into your mods folder and merges `keys.json` into yours.
+
+### By hand
+
+1. Clone this repo and copy the mod into your Herdr mods folder:
 
    ```sh
-   git clone https://github.com/camerontredoux/herdr-canvas ~/.config/herdr-app/mods/canvas
+   git clone https://github.com/camerontredoux/herdr-canvas
+   cp -R herdr-canvas/mods/canvas ~/.config/herdr-app/mods/canvas
    ```
 
-2. Check that Herdr can load the mod:
+2. Merge `keys.json` into `~/.config/herdr-app/keys.json`. Add its sections and keys. If you already use one of its keys, choose which binding to keep.
+
+3. Check that Herdr can load the mod:
 
    ```sh
    herdr-app check mods/canvas
    ```
 
-3. Open the canvas in a new tab:
+4. Press Cmd-Shift-E. The canvas opens in a pane to the right. Close the pane as you close any other.
 
-   ```sh
-   herdr-app do tab.new --name canvas --mod canvas
-   ```
+## Keys
 
-   To open it with a key, bind a command that opens the `canvas` mod in your Herdr key config.
+`keys.json` binds these keys:
+
+| Key | Where | What it does |
+|---|---|---|
+| Cmd-Shift-E | Anywhere | Opens the canvas in a pane to the right |
+| Cmd-D | Canvas | Duplicates the selection. With nothing selected, splits the pane as usual. |
+| Cmd-Shift-Arrows | Canvas | Selects to the line start, line end, top or bottom while you type. Otherwise moves between panes as usual. |
+| Alt-Shift-Left, Alt-Shift-Right | Canvas | Selects by word while you type. Otherwise switches tabs as usual. |
+
+Outside a text box, Alt-Shift-Left and Alt-Shift-Right run Herdr's `tab.prev` and `tab.next`. Another mod can name its own commands in the shared value `canvas.tab-commands`, as `{ "prev": "...", "next": "..." }`.
 
 ## Where the drawing is saved
 
@@ -61,6 +79,8 @@ The canvas saves to Herdr's data folder on your computer. It does not save to th
 
 ## Development
 
+The mod lives in `mods/canvas/`.
+
 - `main.js` is the view: tools, input, saving and painting.
 - `geometry.js` holds the stroke geometry: smoothing, simplifying, straightening and tracing. It has no Herdr imports, so Node can test it.
 - `text.js` moves the caret in a text box: by character, by word and by line. Like `geometry.js`, Node can test it.
@@ -68,10 +88,14 @@ The canvas saves to Herdr's data folder on your computer. It does not save to th
 Run the tests with Node:
 
 ```sh
-node test.mjs
+node mods/canvas/test.mjs
 ```
 
 Herdr writes `gpui-kit.d.ts` and `jsconfig.json` into the mod folder for editor type checking. `.gitignore` leaves them out.
+
+If you edit the mod in your Herdr mods folder, `./sync.sh` copies it into this repo so you can commit it. Set `HERDR_HOME` if Herdr's folder is not `~/.config/herdr-app`.
+
+`RECIPE.md` is the brief another agent can build the mod from. `preview.png` is the screenshot the Herdr gallery shows.
 
 ### Performance
 

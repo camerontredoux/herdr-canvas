@@ -1,0 +1,14 @@
+{
+  "global": {
+    "cmd-shift-e": { "command": "pane.split", "args": { "direction": "right", "mod": "canvas" } }
+  },
+  "mod:canvas": {
+    "cmd-d": "canvas.key-cmd-d",
+    "cmd-shift-left": "canvas.key-cmd-shift-left",
+    "cmd-shift-right": "canvas.key-cmd-shift-right",
+    "cmd-shift-up": "canvas.key-cmd-shift-up",
+    "cmd-shift-down": "canvas.key-cmd-shift-down",
+    "alt-shift-left": "canvas.key-alt-shift-left",
+    "alt-shift-right": "canvas.key-alt-shift-right"
+  }
+}
