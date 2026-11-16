@@ -2,6 +2,8 @@
 
 A freehand drawing board for [Herdr](https://github.com/herdrdev/herdr-app). It opens as a pane in any tab. Every pane shows the same drawing.
 
+![The canvas in Herdr: hand-drawn strokes, text, and a selected picture with resize handles](docs/screenshot.png)
+
 ## Features
 
 - **Pen:** smoothed strokes that keep their shape. Draw fast to round out curves. Draw slowly for exact lines.
